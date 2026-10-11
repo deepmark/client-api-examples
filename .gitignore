@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+embed.json
+detect.json
+result.json
+watermarked.*
+results/
