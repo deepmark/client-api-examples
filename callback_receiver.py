@@ -32,7 +32,11 @@ def download(job_id, timeout=600, interval=5):
     url = f"{BASE_URL}/client/inference-jobs/{job_id}/download"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        response = requests.get(url, headers=HEADERS, timeout=300)
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=300)
+        except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
+            time.sleep(interval)  # a dropped connection or cut-off body: try again
+            continue
         if response.status_code == 200:
             disposition = response.headers.get("content-disposition", "")
             name = disposition.split('filename="')[-1].rstrip('"') if 'filename="' in disposition else job_id

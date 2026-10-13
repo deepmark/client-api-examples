@@ -37,20 +37,23 @@ version, watermark length and type. Run it again with the `_id` of the model you
 python deepmark_quickstart.py samples/speech.wav 6ab529a18d7eecb6f6d43f87
 ```
 
-Output from a run with a 32-bit audio model:
+Output from a real API run on 2026-10-13 with a 32-bit audio model (repeated waiting lines omitted):
 
 ```text
 model: vigil-multibit-32b-a91 v1.0
-embed job: ee262339-5fa5-4686-aa41-40c1c5c98667
+embed job: 3039d026-1039-4e83-b3ba-e068f00d5206
+  waiting: HTTP 400 {"detail":"Result not available yet"}
 saved watermarked.wav
-detect job: 5dfe5b9f-868f-4853-ac19-6b600b139faf
+detect job: 3101f9b9-a97b-494d-ad20-71f081e84541
+  waiting: HTTP 400 {"detail":"Result not available yet"}
 watermark found: True
-embedded:  00011000000011110110100101000101
-extracted: 00011000000011110110100101000101
+embedded:  01111101111101110011111001001000
+extracted: 01111101111101110011111001001000
 ```
 
-The script works the same way with image files (`.png`, `.jpg`) and an image model. It waits up to 30 minutes
-for each result.
+The script works the same way with image files (`.png`, `.jpg`) and an image model. It polls for up to 30 minutes
+for each result; an in-progress request may finish later. It reads the whole file into memory;
+for very large videos, use `deepmark_quickstart.sh`, which streams the upload.
 
 ## curl
 
@@ -60,15 +63,19 @@ List the models your key can use, and pick one:
 curl -sS "https://app.deepmark.me/client/models" -H "X-Client-Api-Key: $DEEPMARK_API_KEY" | python3 -m json.tool
 ```
 
-Note its `_id` and `min_watermark_length`, then run the script with a file, the `_id` and a watermark of exactly
-`min_watermark_length` zeros and ones (`""` for a zero-bit model):
+Note its `_id`, `min_watermark_length` and `max_watermark_length`, then run the script with a file, the `_id` and a
+watermark of zeros and ones whose length is in that range (`""` for a zero-bit model):
 
 ```bash
 ./deepmark_quickstart.sh samples/speech.wav 6ab529a18d7eecb6f6d43f87 11001100110011001100110011001100
 ```
 
-It needs bash and curl (macOS, Linux, or WSL on Windows). `WAIT_MINUTES` sets how long it waits for each job
-(default 30).
+It needs bash, curl and Python 3.9+ (macOS, Linux, or WSL on Windows). Python's standard library checks the
+detection JSON for a failed job; no Python packages are needed for this script. `WAIT_MINUTES` sets how long
+it waits for each job (default 30).
+
+Both quickstarts overwrite their previous output on a repeat run. If the output is also the input file,
+they use `watermarked_again` with the same extension instead. A failed detection exits with its reason.
 
 ## Callbacks
 
@@ -88,7 +95,7 @@ from the job ID instead of following any URL in the callback body.
 ## Adapting the examples
 
 - **Your model.** Each organisation gets its own set of models. Pass the `_id` you want instead of relying on the
-  default, and check its `type`, `watermark_type` and `min_watermark_length` in `GET /client/models`.
+  default, and check its `type`, `watermark_type` and watermark length range in `GET /client/models`.
 - **Your payload.** The examples embed random bits. In your system the bits identify something: a customer, a
   request, a piece of content. In Python, `format(customer_number, "032b")` turns a number into 32 bits, and
   `int(bits, 2)` turns extracted bits back into the number.

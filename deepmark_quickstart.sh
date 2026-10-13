@@ -3,7 +3,7 @@
 #
 # Usage: ./deepmark_quickstart.sh <file> <model _id> <watermark bits>
 #   ./deepmark_quickstart.sh samples/speech.wav 6ab529a18d7eecb6f6d43f87 11001100110011001100110011001100
-# The watermark must have exactly the model's min_watermark_length bits; pass "" for a zero-bit model.
+# The watermark needs min_watermark_length to max_watermark_length bits; pass "" for a zero-bit model.
 # Needs DEEPMARK_API_KEY in the environment. WAIT_MINUTES (default 30) caps the wait for each job.
 set -euo pipefail
 
@@ -36,19 +36,27 @@ job_id() {
   grep -o '"job_id": *"[^"]*"' "$1" | cut -d'"' -f4
 }
 
-# 400 means the job is not done yet; a 5xx can appear for a few seconds while the result is stored.
-# Any other answer is final.
+# 400 means the job is not done yet; a 5xx can appear while the result is stored.
+# Retry dropped connections and cut-off downloads. Rename $2.part only when complete.
 wait_for_result() {
   [ -n "$1" ] || { echo "no job ID, see the submit response above"; return 1; }
-  for attempt in $(seq $((${WAIT_MINUTES:-30} * 12))); do
-    read -r code RETURNED_TYPE < <(curl -sS -o "$2" -w "%{http_code} %{content_type}\n" \
+  local deadline=$((SECONDS + ${WAIT_MINUTES:-30} * 60)) left out rc code
+  while left=$((deadline - SECONDS)); [ "$left" -gt 0 ]; do
+    rc=0
+    out=$(curl -sS -m "$left" -o "$2.part" -w "%{http_code} %{content_type}" \
       "$BASE_URL/client/inference-jobs/$1/download" \
-      -H "X-Client-Api-Key: $DEEPMARK_API_KEY")
-    [ "$code" = 200 ] && echo "saved $2" && return 0
-    echo "$code $(cat "$2" 2>/dev/null)"
-    rm -f "$2"
+      -H "X-Client-Api-Key: $DEEPMARK_API_KEY") || rc=$?
+    code="${out%% *}"
+    RETURNED_TYPE="${out#* }"
+    if [ "$rc" = 0 ] && [ "$code" = 200 ]; then
+      mv -f "$2.part" "$2"
+      echo "saved $2"
+      return 0
+    fi
+    if [ "$code" = 200 ]; then echo "download interrupted, retrying"; else echo "$code $(cat "$2.part" 2>/dev/null)"; fi
+    rm -f "$2.part"
     case "$code" in
-      400 | 5??) sleep 5 ;;
+      200 | 400 | 5?? | 000) sleep 5 ;;
       *) return 1 ;;
     esac
   done
@@ -75,7 +83,11 @@ case "${RETURNED_TYPE%%;*}" in
   image/jpeg) OUT=watermarked.jpg ;;
   *) OUT="watermarked.$EXT" ;;
 esac
-mv watermarked.download "$OUT"
+if [ "$OUT" -ef "$FILE" ]; then
+  OUT="watermarked_again.${OUT##*.}"  # never overwrite the input
+fi
+[ "$OUT" -ef "$FILE" ] && { echo "Output aliases the input; run from another directory" >&2; exit 1; }
+mv -f watermarked.download "$OUT"
 echo "renamed it $OUT"
 
 echo "detecting the watermark in $OUT"
@@ -85,5 +97,12 @@ curl -sS -X POST "$BASE_URL/client/detect" \
   -F "model=$MODEL_ID" | tee detect.json
 echo
 wait_for_result "$(job_id detect.json)" result.json
+python3 - <<'PY'
+import json, sys
+with open("result.json") as f:
+    result = json.load(f)
+if result.get("success") is False:
+    sys.exit(f"detection failed: {result.get('error_message') or 'no reason given'}")
+PY
 cat result.json
 echo
