@@ -18,7 +18,6 @@ CONTENT_TYPES = {
     ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 }
-# A dropped connection or a cut-off download is worth another try; other errors are not.
 NETWORK_ERRORS = (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError)
 
 if len(sys.argv) < 2:
@@ -29,7 +28,6 @@ HEADERS = {"X-Client-Api-Key": os.environ["DEEPMARK_API_KEY"]}
 
 
 def check(response):
-    """Raise with the API's error message instead of a bare status code."""
     if not response.ok:
         raise RuntimeError(f"HTTP {response.status_code}: {response.text}")
     return response
@@ -41,7 +39,6 @@ def content_type_of(path):
 
 
 def submit(endpoint, path, **fields):
-    """Upload a file to /client/embed or /client/detect and return the job ID."""
     with open(path, "rb") as f:
         files = {"file": (os.path.basename(path), f, content_type_of(path))}
         response = requests.post(f"{BASE_URL}/client/{endpoint}", headers=HEADERS,
@@ -50,7 +47,6 @@ def submit(endpoint, path, **fields):
 
 
 def wait_for_result(job_id, timeout=1800, interval=5):
-    """Poll the download endpoint until the job's result is ready, printing each answer."""
     url = f"{BASE_URL}/client/inference-jobs/{job_id}/download"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -61,8 +57,7 @@ def wait_for_result(job_id, timeout=1800, interval=5):
         else:
             if response.status_code == 200:
                 return response
-            # 400: not finished yet (a failed job answers the same, hence the timeout).
-            # 5xx: the result is still being stored, or a passing server error. Anything else is final.
+            # Retry pending results (400) and server/storage errors (5xx).
             if response.status_code != 400 and response.status_code < 500:
                 check(response)
             print(f"  waiting: HTTP {response.status_code} {response.text[:80]}")
@@ -83,19 +78,18 @@ def main():
         sys.exit(1)
     print(f"model: {model['name']} {model['version']}")
 
-    # A multi-bit model takes min_watermark_length to max_watermark_length bits (this uses the
-    # minimum); a zero-bit model takes none.
+    # Use the model's minimum bit length; zero-bit models take an empty watermark.
     bits = "".join(random.choice("01") for _ in range(model["min_watermark_length"] or 0))
 
     job_id = submit("embed", path, model=model["_id"], watermark=bits)
     print("embed job:", job_id)
     watermarked = wait_for_result(job_id)
-    # Name the file after what comes back: an MP3 upload returns WAV, for example.
+    # Use the response type: an MP3 upload can return WAV.
     returned_type = watermarked.headers.get("Content-Type", "").split(";")[0]
     extension = next((e for e, t in CONTENT_TYPES.items() if t == returned_type), os.path.splitext(path)[1])
     output_path = "watermarked" + extension
     if os.path.exists(output_path) and os.path.samefile(output_path, path):
-        output_path = "watermarked_again" + extension  # never overwrite the input
+        output_path = "watermarked_again" + extension
     if os.path.exists(output_path) and os.path.samefile(output_path, path):
         sys.exit("Output aliases the input; run from another directory")
     with open(output_path, "wb") as f:

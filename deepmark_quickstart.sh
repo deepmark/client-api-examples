@@ -15,7 +15,7 @@ MODEL_ID="$2"
 WATERMARK="$3"
 EXT="${FILE##*.}"
 
-# curl uploads audio and video as application/octet-stream unless told the type, and the API rejects that.
+# The API requires the file's MIME type in the upload.
 content_type() {
   case "$(echo "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
     wav) echo audio/wav ;;
@@ -36,8 +36,7 @@ job_id() {
   grep -o '"job_id": *"[^"]*"' "$1" | cut -d'"' -f4
 }
 
-# 400 means the job is not done yet; a 5xx can appear while the result is stored.
-# Retry dropped connections and cut-off downloads. Rename $2.part only when complete.
+# Retry pending results (400), server/storage errors (5xx), and interrupted downloads.
 wait_for_result() {
   [ -n "$1" ] || { echo "no job ID, see the submit response above"; return 1; }
   local deadline=$((SECONDS + ${WAIT_MINUTES:-30} * 60)) left out rc code
@@ -73,7 +72,7 @@ curl -sS -X POST "$BASE_URL/client/embed" \
 echo
 wait_for_result "$(job_id embed.json)" watermarked.download
 
-# Name the file after what comes back: an MP3 upload returns WAV, for example.
+# Use the response type: an MP3 upload can return WAV.
 case "${RETURNED_TYPE%%;*}" in
   audio/wav | audio/x-wav) OUT=watermarked.wav ;;
   audio/flac) OUT=watermarked.flac ;;
@@ -84,7 +83,7 @@ case "${RETURNED_TYPE%%;*}" in
   *) OUT="watermarked.$EXT" ;;
 esac
 if [ "$OUT" -ef "$FILE" ]; then
-  OUT="watermarked_again.${OUT##*.}"  # never overwrite the input
+  OUT="watermarked_again.${OUT##*.}"
 fi
 [ "$OUT" -ef "$FILE" ] && { echo "Output aliases the input; run from another directory" >&2; exit 1; }
 mv -f watermarked.download "$OUT"
