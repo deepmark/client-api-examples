@@ -1,10 +1,10 @@
-"""Receive DeepMark job callbacks and download the result of each finished job.
+"""Receive DeepMark job callbacks and download results to ./results.
 
-Run it where DeepMark can reach it, and pass its public URL as callback_url when you submit a job:
+Pass this server's public URL as callback_url when submitting a job.
 
     python callback_receiver.py 8080
 
-Results are saved in ./results. Needs DEEPMARK_API_KEY in the environment.
+Needs DEEPMARK_API_KEY in the environment.
 """
 import json
 import os
@@ -24,18 +24,14 @@ seen_lock = threading.Lock()
 
 
 def download(job_id, timeout=600, interval=5):
-    """Download a finished job's result with the API key.
-
-    The callback is sent before the result is stored, so 400 and 5xx answers are retried for a while.
-    Callbacks are not signed: downloading with your key is also what confirms the job is yours.
-    """
+    """Retry downloads while the callback's result is being stored."""
     url = f"{BASE_URL}/client/inference-jobs/{job_id}/download"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             response = requests.get(url, headers=HEADERS, timeout=300)
         except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
-            time.sleep(interval)  # a dropped connection or cut-off body: try again
+            time.sleep(interval)
             continue
         if response.status_code == 200:
             disposition = response.headers.get("content-disposition", "")
@@ -55,7 +51,7 @@ def download(job_id, timeout=600, interval=5):
 class CallbackHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-        # Answer at once: DeepMark stores the result only after the callback has been answered.
+        # Acknowledge before downloading; the result may not be stored yet.
         self.send_response(200)
         self.end_headers()
         try:
@@ -67,7 +63,7 @@ class CallbackHandler(BaseHTTPRequestHandler):
         if status != "completed" or not job_id:
             return
         with seen_lock:
-            # The same job can be reported more than once.
+            # Callbacks can be repeated.
             if job_id in seen_jobs:
                 return
             seen_jobs.add(job_id)
