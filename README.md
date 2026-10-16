@@ -19,7 +19,7 @@ export DEEPMARK_API_KEY="paste-your-api-key-here"
 
 ## Python
 
-Python 3.9 or newer. On Debian and Ubuntu, install the venv module first (`sudo apt install python3-venv`).
+Python 3.10 or newer, as required by `requests` in `requirements.txt`. On Debian and Ubuntu, install the venv module first (`sudo apt install python3-venv`).
 
 ```bash
 python3 -m venv .venv
