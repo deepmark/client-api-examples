@@ -64,7 +64,7 @@ Pass a model `_id` from the list and a binary watermark between its `min_waterma
 ./deepmark_quickstart.sh samples/speech.wav 6ab529a18d7eecb6f6d43f87 11001100110011001100110011001100
 ```
 
-Requires bash, curl and Python 3.9+ on macOS, Linux or WSL. No Python packages are needed. Set `WAIT_MINUTES` to change the per-job wait limit (default 30).
+Requires bash, curl and any Python 3 (for `json.tool`, so the stock macOS Python is fine) on macOS, Linux or WSL. No Python packages are needed. Set `WAIT_MINUTES` to change the per-job wait limit (default 30).
 
 Both quickstarts reuse their output filenames. If the media output is the input file, they use `watermarked_again` with the same extension.
 
@@ -85,6 +85,9 @@ Callbacks are unsigned. The receiver downloads results by job ID using your API 
 - **Model.** Use `GET /client/models` to choose an `_id` with the required `type`, `watermark_type` and watermark length range.
 - **Payload.** The Python script generates random bits. Replace them with your own binary payload within the model's length range.
 - **Content type.** Set the upload MIME type, such as `audio/wav` or `video/mp4`, to match the file. Both scripts infer it from the extension.
+- **Limits.** Audio must be WAV, FLAC, MP3, OGG or AIFF, at most 128 MiB and 30 minutes; Vigil models also cap the decoded audio (about 6 minutes of stereo at 44.1 kHz). See [Limits](https://www.deepmark.me/docs/api/key-guide#limits).
+- **Many files.** Each model runs one job at a time and queues the rest, so keep a few jobs in flight rather than sending everything at once.
+- **Cancel.** Stop a job you no longer need with `curl -sS -X POST "https://app.deepmark.me/client/inference-jobs/$JOB_ID/cancel" -H "X-Client-Api-Key: $DEEPMARK_API_KEY"`.
 
 ## More
 
